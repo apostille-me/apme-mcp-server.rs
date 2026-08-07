@@ -1,0 +1,27 @@
+[package]
+org = "apostille-me"
+name = "apme-mcp-server"
+version = "0.1.0"
+description = "Read-only MCP server for the apostille-me organization"
+license = "MIT"
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/apostille-me/apme-mcp-server.rs"
+
+[install]
+dir = ".vendor/.zed"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = ["target/**", ".vendor/**", ".zed/**", ".env", ".env.*", "*.log"]
+
+[dependencies]
+"apostille-me/apme-clients" = "^0.1.0"
+"apostille-me/apme-interfaces" = "^0.1.0"
+"apostille-me/apme-libs" = "^0.1.0"
+"apostille-me/apme-cli" = "^0.1.0"
+"apostille-me/apme-sync" = "^0.1.0"
+"shared-auth/shared-auth-clients" = "^0.1.0"

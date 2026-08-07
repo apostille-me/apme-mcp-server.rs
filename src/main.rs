@@ -182,7 +182,11 @@ mod tests {
             .as_array()
             .expect("dependencies should be an array");
         assert_eq!(dependencies.len(), ZED_DEPENDENCIES.len());
-        assert!(dependencies.iter().any(|value| value == "shared-auth/shared-auth-clients"));
+        assert!(
+            dependencies
+                .iter()
+                .any(|value| value == "shared-auth/shared-auth-clients")
+        );
     }
 
     #[test]

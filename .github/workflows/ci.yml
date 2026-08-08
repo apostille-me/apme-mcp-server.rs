@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out without credentials
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -27,7 +27,7 @@ jobs:
           submodules: false
 
       - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.97.1
           components: rustfmt, clippy
@@ -40,8 +40,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s Cargo.lock
-          grep -Fq 'rev = "652eee6538eae8c286b70593d3da574c3da741de"' Cargo.toml
-          grep -Fq '#652eee6538eae8c286b70593d3da574c3da741de"' Cargo.lock
+          grep -Fq 'rev = "458419497de273d2ca6089a727f38894083d8da6"' Cargo.toml
+          grep -Fq '#458419497de273d2ca6089a727f38894083d8da6"' Cargo.lock
           cargo metadata --locked --format-version 1 >/dev/null
           git diff --exit-code -- Cargo.lock
 
@@ -58,13 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for dependency in \
-            apostille-me/apme-clients \
-            apostille-me/apme-interfaces \
-            apostille-me/apme-libs \
-            apostille-me/apme-cli \
-            apostille-me/apme-sync \
-            shared-auth/shared-auth-clients
+          for dependency in             apostille-me/apme-clients             apostille-me/apme-interfaces             apostille-me/apme-libs             apostille-me/apme-cli             apostille-me/apme-sync             shared-auth/shared-auth-clients
           do
             grep -Fq "\"${dependency}\"" .zpkg.toml
           done

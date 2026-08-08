@@ -16,10 +16,7 @@ async fn main() -> Result<(), RuntimeError> {
         || Ok::<_, RuntimeError>(()),
         |_config, _spec| Ok::<_, RuntimeError>(()),
         |_config, _spec| {
-            Ok::<_, RuntimeError>(ExactProtocol::new(
-                ApmeMcp,
-                ProtocolVersion::V_2025_11_25,
-            ))
+            Ok::<_, RuntimeError>(ExactProtocol::new(ApmeMcp, ProtocolVersion::V_2025_11_25))
         },
     )
     .await

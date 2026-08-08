@@ -1,0 +1,73 @@
+name: exact rmcp runtime
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exact-rmcp-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SHARED_MCP_REV: 458419497de273d2ca6089a727f38894083d8da6
+
+jobs:
+  runtime:
+    name: Rust ${{ matrix.rust }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [1.88.0, 1.97.1]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Validate immutable dependency state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Cargo.lock
+          test "$(grep -Fc "rev = \"${SHARED_MCP_REV}\"" Cargo.toml)" -eq 3
+          grep -Fq "#${SHARED_MCP_REV}\"" Cargo.lock
+          grep -Fq 'version = "=2.2.0"' Cargo.toml
+          cargo metadata --locked --format-version 1 >/dev/null
+          git diff --exit-code -- Cargo.lock
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run strict Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Run unit and real-process conformance tests
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Ratchet official dispatch and exact final protocol
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'ExactProtocol::new' src/main.rs
+          grep -Fq 'ProtocolVersion::V_2025_11_25' src/main.rs
+          grep -Fq 'exact_protocol_wrapper_rejects_preview_and_legacy_versions' tests/stdio_conformance.rs
+          ! grep -R -F '2025-06-18' src
+          ! grep -R -F 'read_line' src
+          ! grep -R -F 'println!' src
+
+      - name: Verify dependency state remained unchanged
+        run: git diff --exit-code -- Cargo.lock

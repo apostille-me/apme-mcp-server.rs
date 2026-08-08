@@ -1,0 +1,253 @@
+name: Zed lock canary
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/zed-lock-canary.yml
+      - .zpkg.toml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-lock-canary-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZED_CLI_SHA: 1ab18fcb2ff884e82af4cac4513d7b983a23c84a
+  ZED_REGISTRY: https://registry.zpkg.net
+
+jobs:
+  resolve:
+    name: Resolve candidate lock and prove frozen replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out consumer without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: consumer
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Check out exact Zed CLI
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          path: zed-cli
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.97.1
+
+      - name: Restore bounded Zed CLI cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: zed-cli
+
+      - name: Build exact Zed CLI
+        working-directory: zed-cli
+        run: cargo build --locked --release --bin zed
+
+      - name: Verify source and workflow pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C zed-cli rev-parse HEAD)" = "$ZED_CLI_SHA"
+          test ! -e consumer/.zpkg.lock
+          grep -Fq 'dir = ".vendor/.zed"' consumer/.zpkg.toml
+          grep -Fq "ZED_CLI_SHA: $ZED_CLI_SHA" consumer/.github/workflows/zed-lock-canary.yml
+          grep -Fq "ZED_REGISTRY: $ZED_REGISTRY" consumer/.github/workflows/zed-lock-canary.yml
+
+      - name: Probe exact package coordinates in the public registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          import tomllib
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          registry = "https://registry.zpkg.net"
+          manifest = tomllib.loads(Path("consumer/.zpkg.toml").read_text())
+          dependencies = manifest.get("dependencies", {})
+          expected = {
+              "apostille-me/apme-clients",
+              "apostille-me/apme-interfaces",
+              "apostille-me/apme-libs",
+              "apostille-me/apme-cli",
+              "apostille-me/apme-sync",
+              "shared-auth/shared-auth-clients",
+          }
+          if set(dependencies) != expected:
+              raise SystemExit(f"unexpected dependency set: {sorted(dependencies)}")
+
+          evidence = {
+              "schemaVersion": 1,
+              "registry": registry,
+              "zedCliRevision": "1ab18fcb2ff884e82af4cac4513d7b983a23c84a",
+              "packages": [],
+          }
+          failures = []
+          for coordinate, requirement in sorted(dependencies.items()):
+              org, name = coordinate.split("/", 1)
+              url = f"{registry}/v1/packages/{urllib.parse.quote(org)}/{urllib.parse.quote(name)}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/json",
+                      "User-Agent": "apme-zed-lock-canary/1",
+                  },
+              )
+              item = {"coordinate": coordinate, "requirement": requirement, "url": url}
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      item["httpStatus"] = response.status
+                      payload = json.load(response)
+              except urllib.error.HTTPError as error:
+                  item["httpStatus"] = error.code
+                  item["error"] = error.read(4096).decode("utf-8", "replace")
+                  failures.append(f"{coordinate}: HTTP {error.code}")
+              except Exception as error:
+                  item["error"] = type(error).__name__
+                  failures.append(f"{coordinate}: {type(error).__name__}")
+              else:
+                  versions = payload.get("versions", [])
+                  item["latest"] = payload.get("latest")
+                  item["versions"] = versions
+                  compatible = [version for version in versions if re.fullmatch(r"0\.1\.\d+", version)]
+                  item["compatibleVersions"] = compatible
+                  if not compatible:
+                      failures.append(f"{coordinate}: no published 0.1.x version")
+              evidence["packages"].append(item)
+
+          path = Path("registry-preflight.json")
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+          if failures:
+              raise SystemExit("registry preflight failed:\n- " + "\n- ".join(failures))
+          print(f"validated {len(evidence['packages'])} published package coordinates")
+          PY
+
+      - name: Resolve and materialize candidate lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          test -x "$zed"
+          cd consumer
+          ZED_PKG_HOME="$RUNNER_TEMP/zed-resolve-home" \
+            "$zed" \
+              --registry "$ZED_REGISTRY" \
+              install \
+              --install-mode copy \
+              --adapter rust
+          test -s .zpkg.lock
+          test -d .vendor/.zed
+          test -n "$(find .vendor/.zed -mindepth 1 -print -quit)"
+
+      - name: Validate generated lock provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import re
+          import tomllib
+          from pathlib import Path
+
+          lock_path = Path("consumer/.zpkg.lock")
+          lock_bytes = lock_path.read_bytes()
+          lock = tomllib.loads(lock_bytes.decode())
+          packages = lock.get("package", [])
+          expected = {
+              "apostille-me/apme-clients",
+              "apostille-me/apme-interfaces",
+              "apostille-me/apme-libs",
+              "apostille-me/apme-cli",
+              "apostille-me/apme-sync",
+              "shared-auth/shared-auth-clients",
+          }
+          observed = {f"{item['org']}/{item['name']}" for item in packages}
+          if observed != expected:
+              raise SystemExit(f"lock package set mismatch: {sorted(observed)}")
+          for item in packages:
+              coordinate = f"{item['org']}/{item['name']}"
+              assert re.fullmatch(r"0\.1\.\d+", item["version"]), coordinate
+              assert re.fullmatch(r"[0-9a-f]{64}", item["sha256"]), coordinate
+              assert item["sha256"] != "0" * 64, coordinate
+              assert isinstance(item["size"], int) and item["size"] > 0, coordinate
+              assert item["format"] in {"tar.gz", "zip"}, coordinate
+              assert item["source"] == "https://registry.zpkg.net", coordinate
+              assert re.fullmatch(r"[0-9a-f]{40}", item["vcs_commit"]), coordinate
+              assert item["vcs_tag"], coordinate
+          Path("candidate-lock.sha256").write_text(hashlib.sha256(lock_bytes).hexdigest() + "\n")
+          print(f"validated {len(packages)} exact lock entries")
+          PY
+
+      - name: Prove isolated frozen replay without lock drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed="$GITHUB_WORKSPACE/zed-cli/target/release/zed"
+          git clone --quiet --no-local --depth 1 consumer "$RUNNER_TEMP/frozen-consumer"
+          cp consumer/.zpkg.lock "$RUNNER_TEMP/frozen-consumer/.zpkg.lock"
+          before="$(sha256sum "$RUNNER_TEMP/frozen-consumer/.zpkg.lock" | awk '{print $1}')"
+          cd "$RUNNER_TEMP/frozen-consumer"
+          ZED_PKG_HOME="$RUNNER_TEMP/zed-frozen-home" \
+            "$zed" \
+              --registry "$ZED_REGISTRY" \
+              install \
+              --frozen \
+              --install-mode copy \
+              --adapter rust
+          after="$(sha256sum .zpkg.lock | awk '{print $1}')"
+          test "$before" = "$after"
+          test -d .vendor/.zed
+          test -n "$(find .vendor/.zed -mindepth 1 -print -quit)"
+
+      - name: Reject credential leakage in evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          prefixes = [
+              "gh" + "p_",
+              "github" + "_pat_",
+              "cf" + "at_",
+              "lin" + "_api_",
+              "AKIA",
+          ]
+          for path in [
+              Path("consumer/.zpkg.lock"),
+              Path("registry-preflight.json"),
+              Path("candidate-lock.sha256"),
+          ]:
+              text = path.read_text(errors="replace")
+              for prefix in prefixes:
+                  if prefix in text:
+                      raise SystemExit(f"credential-shaped value found in {path}")
+          PY
+
+      - name: Upload resolver candidate and bounded evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apme-zed-lock-candidate
+          path: |
+            consumer/.zpkg.lock
+            registry-preflight.json
+            candidate-lock.sha256
+          if-no-files-found: error
+          retention-days: 3

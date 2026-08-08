@@ -1,3 +1,4 @@
+# Retry after modeling intentional initialize rejection as a nonzero lifecycle exit.
 name: reconcile DEN-2972 branch
 
 on:

@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     io::{Read, Write},
-    process::{Command, Stdio},
+    process::{Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -33,7 +33,7 @@ fn initialize_request(id: u64, protocol_version: &str) -> Value {
     })
 }
 
-fn run_session(requests: &[Value]) -> (Vec<u8>, Vec<u8>) {
+fn run_session_with_status(requests: &[Value]) -> (ExitStatus, Vec<u8>, Vec<u8>) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_apme-mcp-server"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -79,6 +79,11 @@ fn run_session(requests: &[Value]) -> (Vec<u8>, Vec<u8>) {
         .read_to_end(&mut stderr)
         .expect("read MCP stderr");
 
+    (status, stdout, stderr)
+}
+
+fn run_session(requests: &[Value]) -> (Vec<u8>, Vec<u8>) {
+    let (status, stdout, stderr) = run_session_with_status(requests);
     assert!(
         status.success(),
         "MCP process failed: {}",
@@ -202,7 +207,13 @@ fn official_rmcp_process_preserves_protocol_and_tool_contract() {
 fn exact_protocol_wrapper_rejects_preview_and_legacy_versions() {
     for (offset, requested_version) in ["2026-07-28", "2025-06-18"].into_iter().enumerate() {
         let id = 100 + offset as u64;
-        let (stdout, stderr) = run_session(&[initialize_request(id, requested_version)]);
+        let (status, stdout, stderr) =
+            run_session_with_status(&[initialize_request(id, requested_version)]);
+        assert!(
+            !status.success(),
+            "rejected initialization must fail the server lifecycle"
+        );
+
         let frame_audit = audit_stdio_stdout(&stdout).expect("stdout must contain only MCP frames");
         assert_eq!(frame_audit.response_count, 1);
         assert_eq!(frame_audit.notification_count, 0);

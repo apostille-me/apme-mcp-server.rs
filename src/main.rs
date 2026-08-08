@@ -1,5 +1,5 @@
-use ore_mcp_zed_graph::{tool_descriptor, DependencyGraph, TOOL_NAME};
-use serde_json::{json, Value};
+use ore_mcp_zed_graph::{DependencyGraph, TOOL_NAME, tool_descriptor};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 
 const SERVER_NAME: &str = "apme-mcp-server";
@@ -28,13 +28,8 @@ fn failure(id: Value, code: i64, message: impl Into<String>) -> Value {
 }
 
 fn dependency_graph() -> DependencyGraph {
-    DependencyGraph::new(
-        ORGANIZATION,
-        REPOSITORY,
-        SERVER_NAME,
-        ZED_DEPENDENCIES,
-    )
-    .expect("static dependency graph should be valid")
+    DependencyGraph::new(ORGANIZATION, REPOSITORY, SERVER_NAME, ZED_DEPENDENCIES)
+        .expect("static dependency graph should be valid")
 }
 
 fn has_empty_tool_arguments(message: &Value) -> bool {

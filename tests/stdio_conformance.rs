@@ -167,8 +167,9 @@ fn official_rmcp_process_preserves_protocol_and_tool_contract() {
 
     for id in ["3", "8", "9"] {
         let call = responses.get(id).expect("tools/call response");
-        let result = audit_text_tool_result_response(call, &json!(id.parse::<u64>().unwrap()), 64 * 1024)
-            .expect("bounded text tool result");
+        let result =
+            audit_text_tool_result_response(call, &json!(id.parse::<u64>().unwrap()), 64 * 1024)
+                .expect("bounded text tool result");
         assert_eq!(result.content_items, 1);
         assert!(!result.is_error);
         let call_json: Value = serde_json::from_slice(call).expect("parse tools/call response");

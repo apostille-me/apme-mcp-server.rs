@@ -7,4 +7,5 @@ license = "MIT"
 publish = false
 
 [dependencies]
+ore-mcp-zed-graph = { git = "https://github.com/ORESoftware/mcp-rust-libs.git", rev = "652eee6538eae8c286b70593d3da574c3da741de" }
 serde_json = "1.0"

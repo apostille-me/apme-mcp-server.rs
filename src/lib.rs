@@ -24,7 +24,7 @@ pub const SERVER_TITLE: &str = "Apostille Me MCP Server";
 pub const SERVER_NAMESPACE: &str = "apostille-me";
 /// Product instructions preserved from the handwritten server.
 pub const SERVER_INSTRUCTIONS: &str =
-    "Read-only server that reports the canonical Apostille Me Zed dependency graph.";
+    "Use zed_dependency_graph to inspect canonical package and submodule ownership.";
 
 const ORGANIZATION: &str = "apostille-me";
 const REPOSITORY: &str = "apostille-me/apme-mcp-server.rs";
@@ -148,7 +148,10 @@ mod tests {
             serde_json::to_value(dependency_tool_result()).expect("serialize tool result");
         assert_eq!(serialized, dependency_graph().tool_result());
         assert_eq!(serialized["isError"], false);
-        assert_eq!(serialized["structuredContent"]["dependencies"], json!(DEPENDENCIES));
+        assert_eq!(
+            serialized["structuredContent"]["dependencies"],
+            json!(DEPENDENCIES)
+        );
     }
 
     #[test]

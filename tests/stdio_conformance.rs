@@ -20,6 +20,19 @@ fn line(value: Value) -> String {
     serde_json::to_string(&value).expect("serialize test request")
 }
 
+fn initialize_request(id: u64, protocol_version: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": protocol_version,
+            "capabilities": {},
+            "clientInfo": {"name": "den-2972-test", "version": "1.0.0"}
+        }
+    })
+}
+
 fn run_session(requests: &[Value]) -> (Vec<u8>, Vec<u8>) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_apme-mcp-server"))
         .stdin(Stdio::piped())
@@ -89,16 +102,7 @@ fn responses_by_id(stdout: &[u8]) -> BTreeMap<String, Vec<u8>> {
 #[test]
 fn official_rmcp_process_preserves_protocol_and_tool_contract() {
     let requests = [
-        json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-11-25",
-                "capabilities": {},
-                "clientInfo": {"name": "den-2972-test", "version": "1.0.0"}
-            }
-        }),
+        initialize_request(1, "2025-11-25"),
         json!({
             "jsonrpc": "2.0",
             "method": "notifications/initialized",
@@ -190,4 +194,34 @@ fn official_rmcp_process_preserves_protocol_and_tool_contract() {
     let unknown: Value = serde_json::from_slice(responses.get("7").expect("unknown response"))
         .expect("parse unknown response");
     assert_eq!(unknown["error"]["code"], -32601);
+    assert_eq!(unknown["error"]["message"], "method not found");
+    assert!(!String::from_utf8_lossy(responses.get("7").unwrap()).contains("apostille/unknown"));
+}
+
+#[test]
+fn exact_protocol_wrapper_rejects_preview_and_legacy_versions() {
+    for (offset, requested_version) in ["2026-07-28", "2025-06-18"].into_iter().enumerate() {
+        let id = 100 + offset as u64;
+        let (stdout, stderr) = run_session(&[initialize_request(id, requested_version)]);
+        let frame_audit = audit_stdio_stdout(&stdout).expect("stdout must contain only MCP frames");
+        assert_eq!(frame_audit.response_count, 1);
+        assert_eq!(frame_audit.notification_count, 0);
+
+        let responses = responses_by_id(&stdout);
+        let raw = responses
+            .get(&id.to_string())
+            .expect("version rejection response");
+        let response: Value = serde_json::from_slice(raw).expect("parse version rejection");
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["id"], id);
+        assert_eq!(response["error"]["code"], -32600);
+        assert_eq!(
+            response["error"]["message"],
+            "unsupported MCP protocol version"
+        );
+        assert!(response.get("result").is_none());
+
+        assert!(!String::from_utf8_lossy(raw).contains(requested_version));
+        assert!(!String::from_utf8_lossy(&stderr).contains(requested_version));
+    }
 }

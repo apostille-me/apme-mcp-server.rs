@@ -1,4 +1,5 @@
-use serde_json::{Value, json};
+use ore_mcp_zed_graph::{tool_descriptor, DependencyGraph, TOOL_NAME};
+use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 
 const SERVER_NAME: &str = "apme-mcp-server";
@@ -26,29 +27,22 @@ fn failure(id: Value, code: i64, message: impl Into<String>) -> Value {
     })
 }
 
-fn dependency_graph() -> Value {
-    json!({
-        "organization": ORGANIZATION,
-        "repository": REPOSITORY,
-        "package": SERVER_NAME,
-        "materializationDirectory": ".vendor/.zed",
-        "dependencies": ZED_DEPENDENCIES,
-        "submoduleInterop": {
-            "gitAuthority": "exact committed checkout and source transport",
-            "zedAuthority": "package identity, dependency intent, materialization, and lock provenance",
-            "adoptionCommand": "zed overtake --git-submodules"
-        }
-    })
+fn dependency_graph() -> DependencyGraph {
+    DependencyGraph::new(
+        ORGANIZATION,
+        REPOSITORY,
+        SERVER_NAME,
+        ZED_DEPENDENCIES,
+    )
+    .expect("static dependency graph should be valid")
 }
 
-fn tool_result() -> Value {
-    let graph = dependency_graph();
-    let text = serde_json::to_string_pretty(&graph).expect("dependency graph is serializable");
-    json!({
-        "content": [{"type": "text", "text": text}],
-        "structuredContent": graph,
-        "isError": false
-    })
+fn has_empty_tool_arguments(message: &Value) -> bool {
+    match message.pointer("/params/arguments") {
+        None | Some(Value::Null) => true,
+        Some(Value::Object(arguments)) => arguments.is_empty(),
+        Some(_) => false,
+    }
 }
 
 fn handle_message(message: Value) -> Option<Value> {
@@ -75,39 +69,18 @@ fn handle_message(message: Value) -> Option<Value> {
         }),
         "notifications/initialized" | "notifications/cancelled" => None,
         "ping" => id.map(|id| success(id, json!({}))),
-        "tools/list" => id.map(|id| {
-            success(
-                id,
-                json!({
-                    "tools": [{
-                        "name": "zed_dependency_graph",
-                        "title": "Zed dependency graph",
-                        "description": "Return the canonical package dependencies and Git-submodule ownership rules.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {},
-                            "additionalProperties": false
-                        },
-                        "outputSchema": {
-                            "type": "object",
-                            "required": ["organization", "repository", "package", "dependencies"],
-                            "properties": {
-                                "organization": {"type": "string"},
-                                "repository": {"type": "string"},
-                                "package": {"type": "string"},
-                                "materializationDirectory": {"type": "string"},
-                                "dependencies": {"type": "array", "items": {"type": "string"}},
-                                "submoduleInterop": {"type": "object"}
-                            }
-                        }
-                    }]
-                }),
-            )
-        }),
+        "tools/list" => id.map(|id| success(id, json!({"tools": [tool_descriptor()]}))),
         "tools/call" => {
             let id = id?;
             match message.pointer("/params/name").and_then(Value::as_str) {
-                Some("zed_dependency_graph") => Some(success(id, tool_result())),
+                Some(TOOL_NAME) if has_empty_tool_arguments(&message) => {
+                    Some(success(id, dependency_graph().tool_result()))
+                }
+                Some(TOOL_NAME) => Some(failure(
+                    id,
+                    -32602,
+                    "tool arguments must be an empty object",
+                )),
                 Some(name) => Some(failure(id, -32602, format!("unknown tool: {name}"))),
                 None => Some(failure(id, -32602, "tool name is required")),
             }
@@ -174,7 +147,7 @@ mod tests {
             "jsonrpc": "2.0",
             "id": 2,
             "method": "tools/call",
-            "params": {"name": "zed_dependency_graph", "arguments": {}}
+            "params": {"name": TOOL_NAME, "arguments": {}}
         }))
         .expect("tool request should receive a response");
 
@@ -187,6 +160,19 @@ mod tests {
                 .iter()
                 .any(|value| value == "shared-auth/shared-auth-clients")
         );
+    }
+
+    #[test]
+    fn dependency_tool_rejects_arguments() {
+        let response = handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": TOOL_NAME, "arguments": {"unexpected": true}}
+        }))
+        .expect("invalid tool request should receive a response");
+
+        assert_eq!(response["error"]["code"], -32602);
     }
 
     #[test]

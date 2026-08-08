@@ -8,8 +8,8 @@ use std::{
 
 use apme_mcp_server::{SERVER_NAME, dependency_graph};
 use ore_mcp_testkit::{
-    audit_closed_world_tool_catalog_response, audit_initialize_response,
-    audit_stdio_stdout, audit_text_tool_result_response,
+    audit_closed_world_tool_catalog_response, audit_initialize_response, audit_stdio_stdout,
+    audit_text_tool_result_response,
 };
 use ore_mcp_zed_graph::{TOOL_NAME, tool_descriptor};
 use serde_json::{Value, json};
@@ -130,18 +130,29 @@ fn official_rmcp_process_preserves_protocol_and_tool_contract() {
             "method": "apostille/unknown",
             "params": {}
         }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {"name": TOOL_NAME}
+        }),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": TOOL_NAME, "arguments": null}
+        }),
     ];
 
     let (stdout, _stderr) = run_session(&requests);
     let frame_audit = audit_stdio_stdout(&stdout).expect("stdout must contain only MCP frames");
-    assert_eq!(frame_audit.response_count, 7);
+    assert_eq!(frame_audit.response_count, 9);
     assert_eq!(frame_audit.notification_count, 0);
 
     let responses = responses_by_id(&stdout);
     let initialize = responses.get("1").expect("initialize response");
-    let initialize_audit =
-        audit_initialize_response(initialize, &json!(1), &["2025-11-25"])
-            .expect("final protocol initialize response");
+    let initialize_audit = audit_initialize_response(initialize, &json!(1), &["2025-11-25"])
+        .expect("final protocol initialize response");
     assert_eq!(initialize_audit.protocol_version, "2025-11-25");
     assert_eq!(initialize_audit.server_name, SERVER_NAME);
     assert_eq!(initialize_audit.server_version, env!("CARGO_PKG_VERSION"));
@@ -154,13 +165,15 @@ fn official_rmcp_process_preserves_protocol_and_tool_contract() {
     let list_json: Value = serde_json::from_slice(list).expect("parse tools/list response");
     assert_eq!(list_json["result"]["tools"], json!([tool_descriptor()]));
 
-    let call = responses.get("3").expect("tools/call response");
-    let result = audit_text_tool_result_response(call, &json!(3), 64 * 1024)
-        .expect("bounded text tool result");
-    assert_eq!(result.content_items, 1);
-    assert!(!result.is_error);
-    let call_json: Value = serde_json::from_slice(call).expect("parse tools/call response");
-    assert_eq!(call_json["result"], dependency_graph().tool_result());
+    for id in ["3", "8", "9"] {
+        let call = responses.get(id).expect("tools/call response");
+        let result = audit_text_tool_result_response(call, &json!(id.parse::<u64>().unwrap()), 64 * 1024)
+            .expect("bounded text tool result");
+        assert_eq!(result.content_items, 1);
+        assert!(!result.is_error);
+        let call_json: Value = serde_json::from_slice(call).expect("parse tools/call response");
+        assert_eq!(call_json["result"], dependency_graph().tool_result());
+    }
 
     for id in ["4", "5"] {
         let response: Value =

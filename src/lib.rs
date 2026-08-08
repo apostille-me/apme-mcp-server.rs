@@ -105,10 +105,7 @@ impl ServerHandler for ApmeMcp {
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
         if request.name.as_ref() != TOOL_NAME {
-            return Err(McpError::invalid_params(
-                format!("unknown tool: {}", request.name),
-                None,
-            ));
+            return Err(McpError::invalid_params("unknown tool", None));
         }
         require_empty_arguments(request.arguments.as_ref())?;
         Ok(dependency_tool_result())
@@ -127,7 +124,7 @@ impl ServerHandler for ApmeMcp {
         }
         Err(McpError::new(
             ErrorCode::METHOD_NOT_FOUND,
-            format!("method not found: {}", request.method),
+            "method not found",
             None,
         ))
     }

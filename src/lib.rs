@@ -6,8 +6,6 @@
 
 #![forbid(unsafe_code)]
 
-use std::borrow::Cow;
-
 use ore_mcp_zed_graph::{DependencyGraph, TOOL_NAME, tool_descriptor};
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -40,7 +38,6 @@ const DEPENDENCIES: [&str; 6] = [
     "apostille-me/apme-sync",
     "shared-auth/shared-auth-clients",
 ];
-const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[ProtocolVersion::V_2025_11_25];
 
 /// Stateless, read-only Apostille Me MCP handler.
 #[derive(Clone, Copy, Debug, Default)]
@@ -92,10 +89,6 @@ fn require_empty_arguments(arguments: Option<&JsonObject>) -> Result<(), McpErro
 impl ServerHandler for ApmeMcp {
     fn get_info(&self) -> ServerInfo {
         server_info()
-    }
-
-    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        Cow::Borrowed(SUPPORTED_PROTOCOL_VERSIONS)
     }
 
     async fn list_tools(
@@ -158,14 +151,6 @@ mod tests {
         let serialized = serde_json::to_value(info).expect("serialize server info");
         assert!(serialized["capabilities"]["tools"].is_object());
         assert_eq!(serialized["protocolVersion"], "2025-11-25");
-    }
-
-    #[test]
-    fn negotiation_is_narrowed_to_final_2025_11_25() {
-        assert_eq!(
-            ApmeMcp.supported_protocol_versions().as_ref(),
-            [ProtocolVersion::V_2025_11_25]
-        );
     }
 
     #[test]

@@ -6,12 +6,15 @@
 
 #![forbid(unsafe_code)]
 
+use std::borrow::Cow;
+
 use ore_mcp_zed_graph::{DependencyGraph, TOOL_NAME, tool_descriptor};
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResult, Implementation, JsonObject, ListToolsResult,
-        PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo, Tool,
+        CallToolRequestParams, CallToolResult, CustomRequest, CustomResult, ErrorCode,
+        Implementation, JsonObject, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+        ServerCapabilities, ServerInfo, Tool,
     },
     service::RequestContext,
 };
@@ -37,6 +40,7 @@ const DEPENDENCIES: [&str; 6] = [
     "apostille-me/apme-sync",
     "shared-auth/shared-auth-clients",
 ];
+const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[ProtocolVersion::V_2025_11_25];
 
 /// Stateless, read-only Apostille Me MCP handler.
 #[derive(Clone, Copy, Debug, Default)]
@@ -90,6 +94,10 @@ impl ServerHandler for ApmeMcp {
         server_info()
     }
 
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(SUPPORTED_PROTOCOL_VERSIONS)
+    }
+
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
@@ -112,6 +120,24 @@ impl ServerHandler for ApmeMcp {
         require_empty_arguments(request.arguments.as_ref())?;
         Ok(dependency_tool_result())
     }
+
+    async fn on_custom_request(
+        &self,
+        request: CustomRequest,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<CustomResult, McpError> {
+        if request.method == "tools/call" {
+            return Err(McpError::invalid_params(
+                "tools/call arguments must be an object, null, or absent",
+                None,
+            ));
+        }
+        Err(McpError::new(
+            ErrorCode::METHOD_NOT_FOUND,
+            format!("method not found: {}", request.method),
+            None,
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -132,6 +158,14 @@ mod tests {
         let serialized = serde_json::to_value(info).expect("serialize server info");
         assert!(serialized["capabilities"]["tools"].is_object());
         assert_eq!(serialized["protocolVersion"], "2025-11-25");
+    }
+
+    #[test]
+    fn negotiation_is_narrowed_to_final_2025_11_25() {
+        assert_eq!(
+            ApmeMcp.supported_protocol_versions().as_ref(),
+            [ProtocolVersion::V_2025_11_25]
+        );
     }
 
     #[test]

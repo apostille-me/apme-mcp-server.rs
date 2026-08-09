@@ -1,0 +1,149 @@
+name: API docs contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - api-docs/**
+      - src/api_docs.rs
+      - src/lib.rs
+      - tests/stdio_conformance.rs
+      - README.md
+      - .github/workflows/api-docs-contract.yml
+  pull_request:
+    paths:
+      - api-docs/**
+      - src/api_docs.rs
+      - src/lib.rs
+      - tests/stdio_conformance.rs
+      - README.md
+      - .github/workflows/api-docs-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out MCP source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check out the exact shared API-docs contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/mcp-rust-libs
+          ref: 47e411311523013f90db98390671d683475d6c74
+          path: .api-docs-contract
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Validate pinned documents, operations, and same-org pairing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool api-docs/api-docs.manifest.json >/dev/null
+          python3 -m json.tool api-docs/apme.openapi.json >/dev/null
+          python3 .api-docs-contract/tooling/validate_api_docs_contract.py \
+            --manifest api-docs/api-docs.manifest.json \
+            --openapi api-docs/apme.openapi.json \
+            --expected-mcp-repository apostille-me/apme-mcp-server.rs \
+            --operations
+
+      - name: Verify digest, catalog, and non-execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('api-docs/api-docs.manifest.json').read_text(encoding='utf-8'))
+          openapi_bytes = Path('api-docs/apme.openapi.json').read_bytes()
+          openapi = json.loads(openapi_bytes)
+          digest = hashlib.sha256(openapi_bytes).hexdigest()
+          assert manifest['public']['openapi']['sha256'] == digest
+          assert manifest['provenance']['sourceRepository'] == 'apostille-me/apme-api'
+          assert manifest['mcp']['repository'] == 'apostille-me/apme-mcp-server.rs'
+          assert manifest['mcp']['mode'] == 'read-only'
+          assert manifest['internal']['available'] is False
+
+          methods = ('get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace')
+          operations = [
+              (method, path, item[method])
+              for path, item in openapi['paths'].items()
+              for method in methods
+              if method in item
+          ]
+          assert len(openapi['paths']) == 7
+          assert len(operations) == 8
+          operation_ids = [operation['operationId'] for _, _, operation in operations]
+          assert len(operation_ids) == len(set(operation_ids))
+          exposed = [
+              operation['operationId']
+              for _, _, operation in operations
+              if operation['x-ore-mcp-expose']
+          ]
+          assert exposed == ['getServiceBanner', 'getHealth', 'getReadiness']
+          for method, _, operation in operations:
+              assert operation['x-ore-mcp-mutating'] == (
+                  method not in {'get', 'head', 'options'}
+              )
+              assert not (
+                  operation['x-ore-mcp-mutating']
+                  and operation['x-ore-mcp-expose']
+              )
+              if {'operations', 'cases', 'realtime'}.intersection(operation['tags']):
+                  assert operation['x-ore-mcp-expose'] is False
+
+          library = Path('src/lib.rs').read_text(encoding='utf-8')
+          for tool in (
+              'api_docs_discover', 'api_docs_get_openapi', 'api_docs_validate',
+              'api_docs_list_operations', 'api_docs_describe_operation'
+          ):
+              assert tool in library, tool
+          catalog = Path('src/api_docs.rs').read_text(encoding='utf-8')
+          for forbidden in (
+              'reqwest', 'hyper::', 'TcpStream', 'WebSocket', 'Command::new',
+              'std::fs', 'std::env', 'AppState', 'CreateCase', 'CaseEvent'
+          ):
+              assert forbidden not in catalog, forbidden
+          assert 'apiExecutionAvailable' in catalog
+          assert 'caseDataAccessAvailable' in catalog
+          PY
+          git diff --check
+
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/api-docs-contract.yml
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: api-docs-contract
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Run API-document tests
+        run: cargo test --locked api_docs
+
+      - name: Run real stdio conformance
+        run: cargo test --locked --test stdio_conformance

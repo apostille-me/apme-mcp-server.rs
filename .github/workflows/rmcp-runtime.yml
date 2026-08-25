@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SHARED_MCP_REV: 458419497de273d2ca6089a727f38894083d8da6
+  SHARED_MCP_REV: c6101656c8227251d1dbd61df54f03a186b42ade
 
 jobs:
   runtime:
@@ -43,9 +43,10 @@ jobs:
         run: |
           set -euo pipefail
           test -s Cargo.lock
-          test "$(grep -Fc "rev = \"${SHARED_MCP_REV}\"" Cargo.toml)" -eq 3
+          test "$(grep -Fc "rev = \"${SHARED_MCP_REV}\"" Cargo.toml)" -eq 1
+          grep -Fq 'ores-mcp-server-core-libs' Cargo.toml
           grep -Fq "#${SHARED_MCP_REV}\"" Cargo.lock
-          grep -Fq 'version = "=2.2.0"' Cargo.toml
+          grep -Fq 'version = "=3.1.4"' Cargo.toml
           cargo metadata --locked --format-version 1 >/dev/null
           git diff --exit-code -- Cargo.lock
 
@@ -58,16 +59,18 @@ jobs:
       - name: Run unit and real-process conformance tests
         run: cargo test --locked --all-targets --all-features
 
-      - name: Ratchet official dispatch and exact final protocol
+      - name: Ratchet official dispatch and supported protocol floor
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'ExactProtocol::new' src/main.rs
-          grep -Fq 'ProtocolVersion::V_2025_11_25' src/main.rs
-          grep -Fq 'exact_protocol_wrapper_rejects_preview_and_legacy_versions' tests/stdio_conformance.rs
-          ! grep -R -F '2025-06-18' src
-          ! grep -R -F 'read_line' src
-          ! grep -R -F 'println!' src
+          grep -Fq 'ProtocolVersion::V_2026_07_28' src/server.rs
+          grep -Fq 'ProtocolVersion::V_2025_06_18' src/server.rs
+          grep -Fq 'tracing::instrument' src/server.rs
+          grep -Fq 'real_process_negotiates_and_lists_namespaced_tools_without_stdout_noise' tests/stdio_integration.rs
+          if grep -R -F 'read_line' src || grep -R -F 'println!' src; then
+            echo 'manual protocol parsing or stdout diagnostics detected' >&2
+            exit 1
+          fi
 
       - name: Verify dependency state remained unchanged
         run: git diff --exit-code -- Cargo.lock

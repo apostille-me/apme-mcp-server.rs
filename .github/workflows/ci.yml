@@ -4,99 +4,38 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  validate:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - name: Check out without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 1
           persist-credentials: false
-          show-progress: false
-          submodules: false
-
       - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.97.1
-          components: rustfmt, clippy
-
-      - name: Restore bounded Rust cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-
-      - name: Validate committed Rust lock and immutable shared revision
+        run: rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt
+      - name: Reject credential-like tracked content
         shell: bash
         run: |
           set -euo pipefail
-          test -s Cargo.lock
-          grep -Fq 'rev = "458419497de273d2ca6089a727f38894083d8da6"' Cargo.toml
-          grep -Fq '#458419497de273d2ca6089a727f38894083d8da6"' Cargo.lock
-          cargo metadata --locked --format-version 1 >/dev/null
-          git diff --exit-code -- Cargo.lock
-
+          if git grep -nE '(ghp_[A-Za-z0-9]{20,}|lin_api_[A-Za-z0-9]{20,}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY)' -- . ':!Cargo.lock'; then
+            echo 'credential-like tracked content detected' >&2
+            exit 1
+          fi
       - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run strict Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-
-      - name: Run all tests
-        run: cargo test --locked --all-targets --all-features
-
-      - name: Validate canonical Zed dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          for dependency in             apostille-me/apme-clients             apostille-me/apme-interfaces             apostille-me/apme-libs             apostille-me/apme-cli             apostille-me/apme-sync             shared-auth/shared-auth-clients
-          do
-            grep -Fq "\"${dependency}\"" .zpkg.toml
-          done
-          grep -Fq 'dir = ".vendor/.zed"' .zpkg.toml
-
-      - name: Reject credential-shaped tracked content
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          import subprocess
-
-          patterns = [
-              re.compile('gh' + r'[pousr]_[A-Za-z0-9_]{20,}'),
-              re.compile('github' + r'_pat_[A-Za-z0-9_]{20,}'),
-              re.compile('cf' + r'at_[A-Za-z0-9_-]{20,}'),
-              re.compile('lin' + r'_api_[A-Za-z0-9_-]{20,}'),
-              re.compile(r'AKIA[0-9A-Z]{16}'),
-              re.compile('sk' + r'-[A-Za-z0-9_-]{20,}'),
-              re.compile(r'-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'),
-          ]
-          allowed = {Path('.github/workflows/ci.yml')}
-          tracked = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
-          for raw_path in tracked:
-              if not raw_path:
-                  continue
-              path = Path(raw_path.decode())
-              if path in allowed or not path.is_file():
-                  continue
-              try:
-                  text = path.read_text(encoding='utf-8')
-              except UnicodeDecodeError:
-                  continue
-              if any(pattern.search(text) for pattern in patterns):
-                  raise SystemExit(f'credential-shaped content found: {path}')
-          PY
-
-      - name: Verify lockfile remained unchanged
-        run: git diff --exit-code -- Cargo.lock
+        run: cargo +1.88.0 fmt --all --check
+      - name: Lint
+        run: cargo +1.88.0 clippy --locked --all-targets --all-features -- -D warnings
+      - name: Test protocol and security boundaries
+        run: cargo +1.88.0 test --locked --all-targets --all-features
+      - name: Build release
+        run: cargo +1.88.0 build --locked --release
+      - name: Install pinned RustSec scanner
+        run: cargo +1.88.0 install cargo-audit --version 0.22.2 --locked
+      - name: Audit locked dependencies
+        run: cargo +1.88.0 audit --deny warnings

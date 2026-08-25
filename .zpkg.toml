@@ -2,26 +2,30 @@
 org = "apostille-me"
 name = "apme-mcp-server"
 version = "0.1.0"
-description = "Read-only MCP server for the apostille-me organization"
+description = "Read-only MCP diagnostics for apostille document and provider contracts"
 license = "MIT"
+keywords = ["mcp", "apostille", "documents", "diagnostics", "global-tool"]
 language = "rust"
 
 [package.repository]
 vcs = "git"
 url = "https://github.com/apostille-me/apme-mcp-server.rs"
 
-[install]
-dir = ".vendor/.zed"
+[build]
+command = "cargo build --release --locked --bin apme-mcp-server"
+outputs = ["target/release/apme-mcp-server"]
+
+[bin]
+apme-mcp-server = "target/release/apme-mcp-server"
 
 [publish]
 include_readme = true
 tag_format = "v{version}"
-exclude = ["target/**", ".vendor/**", ".zed/**", ".env", ".env.*", "*.log"]
+smoke_test = '''test -x "$ZED_PKG_TEST_TARGET/target/release/apme-mcp-server" && responses=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"zed-r2g","version":"1"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | "$ZED_PKG_TEST_TARGET/target/release/apme-mcp-server") && printf '%s\n' "$responses" | grep -q '"tools"' '''
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "target/**", "tmp/**", "**/*.log", ".DS_Store"]
 
-[dependencies]
-"apostille-me/apme-clients" = "^0.1.0"
-"apostille-me/apme-interfaces" = "^0.1.0"
-"apostille-me/apme-libs" = "^0.1.0"
-"apostille-me/apme-cli" = "^0.1.0"
-"apostille-me/apme-sync" = "^0.1.0"
-"shared-auth/shared-auth-clients" = "^0.1.0"
+[install]
+adapter = "none"
+
+[scripts]
+test = "cargo test --all-targets --all-features --locked"

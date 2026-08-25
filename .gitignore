@@ -1,7 +1,7 @@
-target/
-.vendor/
-.zed/
-.env
-.env.*
-!.env.example
-*.log
+/target/
+/.env
+/.env.*
+/env/dec/
+/.sops.yaml
+*.agekey
+*.age-key

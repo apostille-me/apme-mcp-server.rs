@@ -1,43 +1,46 @@
-# apme-mcp-server.rs
+# Apostille Me MCP Server
 
-Canonical public repository for `apostille-me/apme-mcp-server.rs`.
+    Read-only MCP diagnostics for apostille document, provider, status, and delivery contracts. The server is a Rust MCP process over stdio. Stdout is exclusively the JSON-RPC wire; structured diagnostics go to stderr and optional OTLP.
 
-The server currently implements newline-delimited JSON-RPC over stdio, negotiates MCP protocol revision `2025-06-18`, and exposes a read-only `zed_dependency_graph` tool. It never writes credentials, modifies repositories, or invokes application APIs.
+    ## Tools
 
-The product-neutral dependency-graph model, closed tool descriptor, validation, and text-plus-structured result are supplied by `ore-mcp-zed-graph`, pinned by full Git revision and committed `Cargo.lock`. Product package coordinates and repository policy remain local.
+    - `apme_fleet_map`
+- `apme_plan`
+- `apme_runtime_readiness`
+- `apme_shared_platform`
+- `apme_lifecycle_state`
+- `apme_safety_boundary`
 
-The official-`rmcp` lifecycle and final `2025-11-25` protocol migration are separate DEN-957 work and are not claimed complete by this repository-recovery change.
+    Every tool is read-only. Planning accepts a closed workload enum plus bounded numeric fields. The server has no arbitrary URL, command, filesystem, database, GitHub mutation, cluster mutation, or secret-value input.
 
-## Canonical Zed graph
+    ## Product topology
 
-- `apostille-me/apme-clients`
-- `apostille-me/apme-interfaces`
-- `apostille-me/apme-libs`
-- `apostille-me/apme-cli`
-- `apostille-me/apme-sync`
-- `shared-auth/shared-auth-clients`
+    - `apme-api` — apostille workflow API
+- `apme-interfaces` — canonical document and provider contracts
+- `apostille-me-libs` — document-status and provider domain libraries
+- `apme-sync` — offline-first workflow synchronization
+- `apostille-me-infra` — Kubernetes and bounded Cloudflare edge infrastructure
 
-Packages materialize under `.vendor/.zed`.
+    ## Security boundary
 
-## Repository delivery
+    - Jurisdiction and provider decisions require authoritative human or provider review.
+- MCP never uploads documents, changes case status, or purchases delivery.
+- Document contents and personal identifiers are excluded from tools and telemetry.
 
-The repository is live on GitHub. The initial source history was published through the authenticated recovery lane tracked by DEN-2285 and DEN-2797. There is no local `publish.sh` step to run after cloning this repository.
+    The shared core is pinned at `c6101656c8227251d1dbd61df54f03a186b42ade`. It provides bounded MCP framing, explicit OTLP/gRPC traces, metrics and logs, JSON stderr diagnostics, redaction, low-cardinality tool metrics, and the formal runtime lifecycle. Each tool also owns an explicit span with `skip_all`; arguments and results are never recorded. Configuration readiness reports environment-variable presence only and performs no authentication or network request.
 
-Subsequent changes must use a focused feature branch and reviewed pull request. Do not rewrite the initial history, force-push shared refs, or place personal access tokens in Git configuration, source, workflow inputs, logs, issues, or pull requests.
+    This server contains no authenticated HTTP client. If a future tool adds one, it must use fixed or strictly validated HTTP(S) origins, reject credentials/query/fragment/private/metadata targets, disable redirects and ambient proxies, keep credentials in sensitive headers, cap every response, and add adversarial tests before merge.
 
-Exact recovery and rebase evidence, including the shared-graph base commit and the still-missing sibling E2E repository, is recorded in [`docs/recovery-delivery.md`](docs/recovery-delivery.md).
+    ## Shared platform knowledge
 
-## Validate
+    The bounded `shared_platform` tool documents ORE Kubernetes, shared definitions, dpm, Cloudflare/Squarespace, Supabase, and Fiducia without exposing a mutation or credential surface.
 
-```bash
-cargo metadata --locked --format-version 1 >/dev/null
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets --all-features
-```
+    ## Validate
 
-## Git submodules and Zed
-
-A composing monorepo may retain this repository as an exact committed gitlink. Zed remains authoritative for package identity and dependency intent. Adopt a canonical existing gitlink with `zed overtake --git-submodules`; do not create a second long-name coordinate, a duplicate workspace path, or an uncommitted submodule checkout.
-
-Tracking: `apostille-me/.github#4`, GitHub Project #1, DEN-2285, DEN-2797, DEN-957, and the `github.com/apostille-me` Linear project.
+    ```sh
+    cargo fmt --all -- --check
+    cargo clippy --locked --all-targets --all-features -- -D warnings
+    cargo test --locked --all-targets --all-features
+    cargo build --locked --release
+    cargo audit --deny warnings
+    ```

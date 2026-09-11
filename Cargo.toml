@@ -3,17 +3,24 @@ name = "apme-mcp-server"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Read-only MCP stdio server for the apostille-me organization"
+description = "Read-only MCP diagnostics for apostille document, provider, status, and delivery contracts"
 license = "MIT"
-publish = false
 repository = "https://github.com/apostille-me/apme-mcp-server.rs"
+readme = "README.md"
 
 [dependencies]
-ore-mcp-runtime = { git = "https://github.com/ORESoftware/mcp-rust-libs", rev = "458419497de273d2ca6089a727f38894083d8da6" }
-ore-mcp-zed-graph = { git = "https://github.com/ORESoftware/mcp-rust-libs", rev = "458419497de273d2ca6089a727f38894083d8da6" }
-rmcp = { version = "=2.2.0", default-features = false, features = ["server", "transport-io"] }
-serde_json = "1.0.150"
-tokio = { version = "1.53.0", features = ["macros", "rt-multi-thread"] }
+anyhow = "=1.0.104"
+ores-mcp-server-core-libs = { git = "https://github.com/ores-otel/ores-mcp-server-core-libs.rs", rev = "c6101656c8227251d1dbd61df54f03a186b42ade" }
+rmcp = { version = "=3.1.4", default-features = false, features = ["macros", "schemars", "server", "transport-io"] }
+schemars = "=1.0.4"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+tokio = { version = "=1.47.1", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "time"] }
+tracing = "=0.1.44"
 
-[dev-dependencies]
-ore-mcp-testkit = { git = "https://github.com/ORESoftware/mcp-rust-libs", rev = "458419497de273d2ca6089a727f38894083d8da6" }
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

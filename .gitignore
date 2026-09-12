@@ -5,3 +5,14 @@
 /.sops.yaml
 *.agekey
 *.age-key
+target/
+.vendor/
+.zed/
+.env
+.env.*
+!.env.example
+*.log
+# >>> ores fleet hygiene — managed block, edits below are overwritten >>>
+tmp/temp/
+tmp/worktrees/
+# <<< ores fleet hygiene <<<

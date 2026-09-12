@@ -16,3 +16,13 @@ target/
 tmp/temp/
 tmp/worktrees/
 # <<< ores fleet hygiene <<<
+# BEGIN ores-sops dotenv policy
+*.env
+*/*.env
+*/**/*.env
+*.env.*
+/env/dec/
+/env/enc/*
+!/env/enc/dev.env.enc
+!/env/enc/prod.env.enc
+# END ores-sops dotenv policy

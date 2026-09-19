@@ -1,10 +1,10 @@
 schema_version: ores.compose.v1
-project: apme-mcp-server.rs
+project: apme-mcp-server
 allow_lazy_start: false
 
 services:
-  apme-mcp-server.rs:
-    name: apme-mcp-server.rs
+  apme-mcp-server:
+    name: apme-mcp-server
     runtime: host
     build:
       - ["cargo", "build", "--bins"]

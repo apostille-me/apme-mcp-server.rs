@@ -1,0 +1,11 @@
+schema_version: ores.compose.v1
+project: apme-mcp-server
+allow_lazy_start: false
+
+services:
+  apme-mcp-server:
+    name: apme-mcp-server
+    runtime: host
+    build:
+      - ["cargo", "build", "--bins"]
+    command: ["./target/debug/apme-mcp-server.rs"]

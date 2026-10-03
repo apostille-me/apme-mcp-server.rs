@@ -5,3 +5,7 @@
 /.sops.yaml
 *.agekey
 *.age-key
+
+# Local temporary directories and repository-owned worktrees
+tmp/
+temp/

@@ -17,12 +17,12 @@ const REPOSITORIES: [(&str, &str); 5] = [
         "canonical document and provider contracts",
     ),
     (
-        "apostille-me-libs",
+        "apme-libs",
         "document-status and provider domain libraries",
     ),
     ("apme-sync", "offline-first workflow synchronization"),
     (
-        "apostille-me-infra",
+        "apme-infra",
         "Kubernetes and bounded Cloudflare edge infrastructure",
     ),
 ];
@@ -188,6 +188,22 @@ mod tests {
         }))
         .expect("serde intentionally delegates numeric bounds");
         assert!(plan(too_large).is_err());
+    }
+
+    #[test]
+    fn fleet_map_uses_canonical_package_and_infrastructure_repositories() {
+        let map = fleet_map();
+        let repos = map["repositories"].as_array().expect("fleet repositories");
+        let names = repos
+            .iter()
+            .filter_map(|repo| repo["name"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), REPOSITORIES.len());
+        assert!(names.contains(&"apme-libs"));
+        assert!(names.contains(&"apme-infra"));
+        assert!(!names.contains(&"apostille-me-libs"));
+        assert!(!names.contains(&"apostille-me-infra"));
+        assert_eq!(map["readOnly"], true);
     }
 
     #[test]

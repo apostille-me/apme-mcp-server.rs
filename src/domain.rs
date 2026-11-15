@@ -16,10 +16,7 @@ const REPOSITORIES: [(&str, &str); 5] = [
         "apme-interfaces",
         "canonical document and provider contracts",
     ),
-    (
-        "apme-libs",
-        "document-status and provider domain libraries",
-    ),
+    ("apme-libs", "document-status and provider domain libraries"),
     ("apme-sync", "offline-first workflow synchronization"),
     (
         "apme-infra",
